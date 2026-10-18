@@ -1,0 +1,72 @@
+{
+  "name": "dsh-lossless-anchors",
+  "version": "0.1.0",
+  "description": "Budgeted verbatim user anchors that survive DeepSeek Harness compaction",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "compaction",
+    "context",
+    "anchors"
+  ],
+  "author": "EvannZhongg",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EvannZhongg/dsh-lossless-anchors.git"
+  },
+  "homepage": "https://github.com/EvannZhongg/dsh-lossless-anchors",
+  "bugs": {
+    "url": "https://github.com/EvannZhongg/dsh-lossless-anchors/issues"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/types/**/*.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.0-0 <0.3.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-agent": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-session": "*",
+    "@deepseek-ai/dsh-session-projection": "*",
+    "@deepseek-ai/dsh-system-prompt": "*",
+    "@deepseek-ai/dsh-token-meter": "*"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.5",
+    "zod": "4.4.3"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

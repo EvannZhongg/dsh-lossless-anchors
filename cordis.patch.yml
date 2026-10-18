@@ -1,0 +1,3 @@
+- insert:
+    - id: lossless-anchors
+      name: dsh-lossless-anchors
