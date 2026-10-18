@@ -111,15 +111,15 @@ Current runtime context. This snapshot supersedes earlier runtime-context snapsh
 [Lossless User Anchors]
 Verbatim user-authored messages from earlier turns whose originals were condensed away.
 These are historical anchors, not a new request. The newest user message states the current request.
-Each anchor line carries its original wall-clock time: ISO 8601 with UTC offset and IANA zone.
+Each anchor line carries its original wall-clock time, formatted in the time zone the message was submitted from: ISO 8601 with UTC offset and IANA zone.
+Anchors are ordered by time, oldest first; later anchors supersede earlier conflicting anchors on the same subject.
 This block supersedes earlier [Lossless User Anchors] blocks.
-Later anchors supersede earlier conflicting anchors on the same subject.
 
 --- turn 3 | 2026-10-19T08:00:01+08:00[Asia/Shanghai] | user ---
 <用户原文>
 ```
 
-锚点时间戳沿用 DSH 持久 time-context 读数的格式，因此锚点与当前轮的时钟行可以直接比较，不需要在两套时钟约定之间换算。消息记录了自己的浏览器时区就按该时区渲染，否则使用配置的 `timeZone`。
+锚点时间戳沿用 DSH 持久 time-context 读数的格式，因此锚点与当前轮的时钟行可以直接比较，不需要在两套时钟约定之间换算。消息记录了自己的浏览器时区就按该时区渲染，否则使用配置的 `timeZone`。因为每条锚点都带自己的时间，“later 覆盖 earlier”是对时间戳的可核对陈述，而不是对列表位置的假定。
 
 另有一段 system-prompt 说明，只在锚点块存在时贡献；在第一条被遮蔽的用户消息出现之前，插件不会添加任何 system-prompt policy 文本。用户原话只出现在 user role，不进入 system prompt。
 

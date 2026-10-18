@@ -108,15 +108,15 @@ Current runtime context. This snapshot supersedes earlier runtime-context snapsh
 [Lossless User Anchors]
 Verbatim user-authored messages from earlier turns whose originals were condensed away.
 These are historical anchors, not a new request. The newest user message states the current request.
-Each anchor line carries its original wall-clock time: ISO 8601 with UTC offset and IANA zone.
+Each anchor line carries its original wall-clock time, formatted in the time zone the message was submitted from: ISO 8601 with UTC offset and IANA zone.
+Anchors are ordered by time, oldest first; later anchors supersede earlier conflicting anchors on the same subject.
 This block supersedes earlier [Lossless User Anchors] blocks.
-Later anchors supersede earlier conflicting anchors on the same subject.
 
 --- turn 3 | 2026-10-19T08:00:01+08:00[Asia/Shanghai] | user ---
 <exact user text>
 ```
 
-Anchor timestamps reuse the format of DSH's durable time-context readings, so an anchor and the current turn's clock line can be compared without converting between clock conventions. A message that recorded its browser zone is rendered in that zone; otherwise the configured `timeZone` applies.
+Anchor timestamps reuse the format of DSH's durable time-context readings, so an anchor and the current turn's clock line can be compared without converting between clock conventions. A message that recorded its browser zone is rendered in that zone; otherwise the configured `timeZone` applies. Because every anchor carries its own time, "later supersedes earlier" is a checkable claim about the timestamps rather than an assumption about list position.
 
 A system-prompt section explains how to interpret the block, and is contributed only while the block is present. Before the first shadowed anchor, the plugin adds no system-prompt policy text. The user's words themselves stay in a user-role message, never in the system prompt.
 
