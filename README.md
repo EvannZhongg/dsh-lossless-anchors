@@ -11,7 +11,7 @@ A DeepSeek Harness plugin that keeps the **exact text of user-authored messages*
 
 DSH compaction replaces an older surface span with one lossy summary. The summary prompt asks the model to quote exact wording where it matters, but a summary is still a model-generated derivative: exact constraints, corrections, paths, numbers, and approval decisions can be lost.
 
-Nosis solves this with `[Lossless User Anchors]`: user-authored inputs and interaction decisions are kept verbatim and re-injected after compression. This plugin implements the same idea using DSH's native seams:
+A practical way to preserve those details is to keep user-authored inputs and interaction decisions verbatim and re-inject them after compression. This plugin implements that idea using DSH's native seams:
 
 - a durable **Session projection** records user-authored messages and their turns;
 - an anchor is eligible only when its original `user/message` seq is **no longer on the current Session surface** — the backend-independent definition of "shadowed by compaction";

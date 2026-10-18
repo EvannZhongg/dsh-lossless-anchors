@@ -11,7 +11,7 @@
 
 DSH 的 compaction 会把较早的 surface 区间替换成一条有损摘要。摘要提示词虽然要求“在措辞重要时逐字引用”，但摘要终究是模型生成的派生结果：精确约束、修正、路径、数字、批准/拒绝决定都可能丢失。
 
-Nosis 用 `[Lossless User Anchors]` 解决这个问题：用户输入和交互决策逐字保留，压缩后重新注入。本插件用 DSH 原生 seam 实现同一语义：
+一种直接的做法是：把用户输入和交互决策逐字保留，在压缩后重新注入。本插件用 DSH 原生 seam 实现这一语义：
 
 - 一个持久化 **Session projection** 记录 user-authored 消息及其 Turn；
 - 只有当原始 `user/message` 的 seq **不在当前 `Session.surface.nodes` 中**时，才视为“被 surface 遮蔽”的锚点；
