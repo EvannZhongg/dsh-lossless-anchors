@@ -92,15 +92,18 @@ describe('PromptContext integration', () => {
     }
   })
 
-  it('adds the policy section only when an anchor block exists', async () => {
+  it('keeps the policy section stable before and after the first anchor', async () => {
     const ctx = await mountProvider()
     try {
-      const session = Session.create(SessionId('policy-on-demand'))
-      const seq = appendUser(session, 'policy anchor')
-      expect(await promptText(ctx, session)).not.toContain('When the runtime context contains a [Lossless User Anchors] block')
+      const session = Session.create(SessionId('policy-stable'))
+      const before = await promptText(ctx, session)
+      expect(before).toContain('When the runtime context contains a [Lossless User Anchors] block')
 
+      const seq = appendUser(session, 'policy anchor')
       shadow(session, seq)
-      expect(await promptText(ctx, session)).toContain('When the runtime context contains a [Lossless User Anchors] block')
+      const after = await promptText(ctx, session)
+      expect(after).toContain('When the runtime context contains a [Lossless User Anchors] block')
+      expect(after).toBe(before)
     } finally {
       await ctx.fiber.dispose()
     }

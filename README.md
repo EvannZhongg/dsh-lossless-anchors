@@ -45,8 +45,10 @@ The package declares `dsh.bundle.patch`, so installing it also inserts the `loss
 ```yaml
 - id: lossless-anchors
   config:
-    tokenBudget: 2000      # soft budget, DSH heuristic tokens
+    tokenBudget: 2000      # soft budget, calibrated tokens
     hardMaxTokens: 3000    # absolute cap; defaults to ceil(tokenBudget * 1.5)
+    charsPerToken: 4       # calibrated characters per token for non-CJK text
+    cjkCharsPerToken: 1.6  # calibrated characters per token for CJK text
     maxTurns: 32           # most-recent shadowed turns considered
     maxAnchors: 256        # projection-state retention cap
     includeSources:
@@ -59,8 +61,10 @@ The package declares `dsh.bundle.patch`, so installing it also inserts the `loss
 
 | Field | Default | Meaning |
 |---|---|---|
-| `tokenBudget` | `2000` | Soft budget for the rendered block. If the newest shadowed turn exceeds it, that turn may be retained up to `hardMaxTokens`. |
+| `tokenBudget` | `2000` | Soft budget for the rendered block, measured in calibrated tokens. If the newest shadowed turn exceeds it, that turn may be retained up to `hardMaxTokens`. |
 | `hardMaxTokens` | `ceil(tokenBudget * 1.5)` | Absolute cap. Must be `>= tokenBudget`. |
+| `charsPerToken` | `4` | Calibrated characters per token for non-CJK text. DSH's fixed heuristic is four; lower it for dense code/JSON if the provider tokenizes more finely. |
+| `cjkCharsPerToken` | `1.6` | Calibrated characters per token for CJK text (about 0.6 tokens per CJK character, following DeepSeek's published conversion). Set to `4` to restore the old uniform four-characters-per-token behavior. |
 | `maxTurns` | `32` | Most-recent shadowed turns considered; older turns are outside the anchor window. |
 | `maxAnchors` | `256` | Projection-state cap. Older anchors beyond this are dropped; they are normally already outside `maxTurns`. |
 | `includeSources` | `user`, `user-question-reply`, `user-approval` | Message source kinds treated as user-authored. `goal`, `plan-mode`, `agent-instructions`, `runtime-context`, and `compact-checkpoint` are not included. |
@@ -79,6 +83,8 @@ Consequences:
 - Images are replaced with `[image omitted: <mediaType>, <w>x<h>]`; files keep their display name and byte count. Image bytes are never re-uploaded from historical context.
 
 ## Budget and truncation
+
+Budgets are measured with `charsPerToken` for non-CJK text and `cjkCharsPerToken` for CJK text, plus the same block/role framing DSH uses for one user message. The defaults are `4` and `1.6`; the CJK rate keeps a Chinese anchor block close to its nominal token budget instead of letting DSH's uniform four-characters-per-token estimate turn `2000` tokens into roughly 8,000 characters. These rates are estimates, not the provider's tokenizer.
 
 1. The newest shadowed turn is considered first.
 2. A candidate that fits `tokenBudget` is accepted.
@@ -118,13 +124,13 @@ This block supersedes earlier [Lossless User Anchors] blocks.
 
 Anchor timestamps reuse the format of DSH's durable time-context readings, so an anchor and the current turn's clock line can be compared without converting between clock conventions. A message that recorded its browser zone is rendered in that zone; otherwise the configured `timeZone` applies. Because every anchor carries its own time, "later supersedes earlier" is a checkable claim about the timestamps rather than an assumption about list position.
 
-A system-prompt section explains how to interpret the block, and is contributed only while the block is present. Before the first shadowed anchor, the plugin adds no system-prompt policy text. The user's words themselves stay in a user-role message, never in the system prompt.
+A system-prompt section explains how to interpret the block. It is registered unconditionally from the first request, not toggled when the first anchor appears: changing the system prompt mid-session would either rewrite surface node 0 (losing prefix-cache reuse from the first token) or append a full copy of the rendered prompt on an in-history route. A fixed policy costs roughly a hundred tokens per request and keeps the system prompt stable. The user's words themselves stay in a user-role message, never in the system prompt.
 
 ## Limitations
 
 - **Only user-authored content.** Assistant reasoning, tool results, and summaries are not anchored.
 - **Budgeted losslessness.** Exact text is preserved only for selected anchors. Oversized turns may be truncated with an explicit marker.
-- **Heuristic token pricing.** DSH prices text at four characters per token; CJK and JSON are underestimated. Lower `tokenBudget` for CJK-heavy sessions.
+- **Calibrated, not exact, token pricing.** The defaults price non-CJK text at four characters per token and CJK text at 1.6 characters per token. That is closer to provider pricing than DSH's uniform heuristic, but it is still an estimate: mixed code/JSON, unusual scripts, and provider-specific tokenizers can differ. Tune `charsPerToken` / `cjkCharsPerToken` if measured usage diverges.
 - **Snapshot accumulation.** DSH runtime-context snapshots are append-only. Multiple compactions may leave more than one anchor snapshot visible; the block header says the latest block supersedes earlier ones. The budget bounds their size.
 - **Summary/anchors can disagree.** `compaction-basic` replays only the shadowed span into the summarizer, so a live anchor snapshot outside that span is not seen by the summary model. The anchor block is re-injected and takes precedence for exact wording.
 - **`required: true` overrides suppression.** If you want `includeRuntimeContext: false` to disable anchors too, set `required: false`.
@@ -146,7 +152,9 @@ The tests cover:
 - surface-membership filtering (no duplicate anchors);
 - exact text preservation, including literal `{{...}}`;
 - soft-budget selection and hard-cap truncation;
+- calibrated CJK pricing versus the uniform four-characters-per-token rate;
 - whole-turn elision and explicit disclosure;
+- a system prompt that stays identical before and after the first anchor;
 - `required`/suppression behavior;
 - source filtering;
 - browser-zone capture and display-zone fallback for anchor timestamps;

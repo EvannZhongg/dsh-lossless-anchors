@@ -179,8 +179,29 @@ describe('anchor formatting', () => {
     expect(rendered).toContain('2026-10-19T08:00:00+08:00[')
   })
 
-  it('prices rendered text with the same heuristic as a user message', () => {
+  it('prices rendered text with block and role framing', () => {
     expect(estimateTextTokens('hello')).toBeGreaterThan(0)
     expect(estimateTextTokens('')).toBe(8)
+  })
+
+  it('prices CJK characters at the calibrated rate', () => {
+    const text = '你'.repeat(1600)
+    expect(estimateTextTokens(text, 4, 4)).toBe(408)
+    expect(estimateTextTokens(text, 4, 1.6)).toBe(1008)
+    expect(estimateTextTokens(text)).toBe(1008)
+  })
+
+  it('applies the configured CJK rate when selecting anchors', () => {
+    const text = '你'.repeat(3200)
+    const common = { tokenBudget: 1200, hardMaxTokens: 1200 }
+    const calibrated = selectAnchors(state([anchor(1, 1, text)]), [], resolveConfig(common))
+    const legacy = selectAnchors(
+      state([anchor(1, 1, text)]),
+      [],
+      resolveConfig({ ...common, cjkCharsPerToken: 4 }),
+    )
+
+    expect(calibrated.anchors[0]?.text.length).toBeLessThan(text.length)
+    expect(legacy.anchors[0]?.text.length).toBe(text.length)
   })
 })

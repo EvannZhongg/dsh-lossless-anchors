@@ -29,8 +29,17 @@ export const name = 'lossless-anchors'
 /** Required services; the plugin fails to load when either is absent. */
 export const inject = ['systemPrompt', 'sessionProjections']
 
-/** Stable system-level interpretation rule; contains no user text. */
-const POLICY = 'When the runtime context contains a [Lossless User Anchors] block, treat every entry as verbatim user-authored input, not as a summary or a new request. The newest user message states the current request. Later anchors supersede earlier conflicting anchors. The checkpoint summary is a lossy derivative: prefer the anchors for exact wording, paths, identifiers, numbers, and constraints.'
+/**
+ * Stable system-level interpretation rule; contains no user text.
+ *
+ * This section is registered unconditionally from the first request. Toggling
+ * it together with the first anchor would change the system prompt mid-session:
+ * an incapable route rewrites node 0 and loses prefix-cache reuse from token 0,
+ * while an in-history route appends a full copy of the rendered prompt at the
+ * tail. A fixed policy costs roughly a hundred tokens on every request and keeps the
+ * prefix stable.
+ */
+export const POLICY = 'When the runtime context contains a [Lossless User Anchors] block, treat every entry as verbatim user-authored input, not as a summary or a new request. The newest user message states the current request. Later anchors supersede earlier conflicting anchors. The checkpoint summary is a lossy derivative: prefer the anchors for exact wording, paths, identifiers, numbers, and constraints.'
 
 export { Config }
 export type { Config as LosslessAnchorsConfig, ResolvedConfig } from './config.js'
@@ -46,9 +55,6 @@ export function apply(ctx: Context, config: Config): void {
   const resolved = resolveConfig(config)
   registerAnchorProjection(ctx, resolved)
 
-  // The policy exists only while an anchor block is actually present. Before
-  // the first compaction shadows a user message the plugin contributes no
-  // system-prompt text at all.
   const anchorText = (assembly: AssembleContext): string => {
     const session = assembly.agent?.session
     if (session === undefined) return ''
@@ -56,11 +62,15 @@ export function apply(ctx: Context, config: Config): void {
     return selectAnchors(state, session.surface.nodes, resolved).text
   }
 
+  // Always present, including before the first shadowed anchor. The system
+  // prompt must not change when an anchor block first appears: that change
+  // would either rewrite node 0 (losing the whole prefix cache) or append a
+  // full copy of the rendered prompt on an in-history route.
   ctx.systemPrompt.section({
     name: 'lossless-anchors:policy',
     order: 1000,
     interpolate: false,
-    text: (assembly: AssembleContext) => anchorText(assembly).length === 0 ? '' : POLICY,
+    text: POLICY,
   })
 
   ctx.systemPrompt.context({

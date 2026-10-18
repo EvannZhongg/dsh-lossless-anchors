@@ -9,7 +9,7 @@
  * @module dsh-lossless-anchors/render
  */
 import type { UserMessage } from '@deepseek-ai/dsh-llm';
-import type { ResolvedConfig } from './config.js';
+import { type ResolvedConfig } from './config.js';
 import type { Anchor, AnchorState } from './types.js';
 /** Stable block preamble. Deliberately says "historical", not "new request". */
 export declare const ANCHOR_HEADER: string;
@@ -44,13 +44,27 @@ export interface SelectionResult {
  */
 export declare function messageText(message: UserMessage): string;
 /**
- * Price rendered text with the same fixed heuristic DSH uses for a user
- * message: one text block plus role framing.
+ * Whether a Unicode code point is normally tokenized as CJK text. The ranges
+ * cover CJK radicals and punctuation, kana, Hangul, unified/compatibility
+ * ideographs, fullwidth forms, and the supplementary ideographic planes.
+ *
+ * @param codePoint - Unicode scalar value.
+ * @returns true for a CJK-family code point.
+ */
+export declare function isCjkCodePoint(codePoint: number): boolean;
+/**
+ * Price rendered text with a calibrated characters-per-token rate: non-CJK
+ * text uses {@link charsPerToken}, CJK text uses {@link cjkCharsPerToken}.
+ * This is deliberately not DSH's fixed four-characters-per-token meter: the
+ * point is to keep a CJK anchor block within the provider's real token cost,
+ * where four characters per token would underprice it by roughly 2.5x.
  *
  * @param text - rendered anchor block.
- * @returns heuristic token count.
+ * @param charsPerToken - calibrated rate for non-CJK text.
+ * @param cjkCharsPerToken - calibrated rate for CJK text.
+ * @returns calibrated token count, including block and role framing.
  */
-export declare function estimateTextTokens(text: string): number;
+export declare function estimateTextTokens(text: string, charsPerToken?: number, cjkCharsPerToken?: number): number;
 /**
  * Render an anchor block. Text is emitted verbatim; only headers, delimiters,
  * and explicit truncation markers are added.

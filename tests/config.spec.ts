@@ -11,6 +11,8 @@ describe('configuration', () => {
     const resolved = resolveConfig({})
     expect(resolved.tokenBudget).toBe(DEFAULT_TOKEN_BUDGET)
     expect(resolved.hardMaxTokens).toBe(3000)
+    expect(resolved.charsPerToken).toBe(4)
+    expect(resolved.cjkCharsPerToken).toBe(1.6)
     expect(resolved.maxTurns).toBe(32)
     expect(resolved.maxAnchors).toBe(256)
     expect([...resolved.includeSources]).toEqual([...DEFAULT_INCLUDE_SOURCES])
@@ -33,6 +35,16 @@ describe('configuration', () => {
     expect(() => resolveConfig({ tokenBudget: 200.5 })).toThrow(/tokenBudget/)
     expect(() => resolveConfig({ maxTurns: 0 })).toThrow(/maxTurns/)
     expect(() => resolveConfig({ maxAnchors: 0 })).toThrow(/maxAnchors/)
+  })
+
+  it('accepts calibrated pricing rates and rejects values outside the range', () => {
+    const resolved = resolveConfig({ charsPerToken: 3, cjkCharsPerToken: 1.5 })
+    expect(resolved.charsPerToken).toBe(3)
+    expect(resolved.cjkCharsPerToken).toBe(1.5)
+    expect(() => resolveConfig({ charsPerToken: 0 })).toThrow(/charsPerToken/)
+    expect(() => resolveConfig({ cjkCharsPerToken: 0 })).toThrow(/cjkCharsPerToken/)
+    expect(() => resolveConfig({ charsPerToken: 17 })).toThrow(/charsPerToken/)
+    expect(() => resolveConfig({ cjkCharsPerToken: Number.POSITIVE_INFINITY })).toThrow(/cjkCharsPerToken/)
   })
 
   it('accepts an explicit display zone and rejects an unknown one', () => {

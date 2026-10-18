@@ -45,8 +45,10 @@ dsh plugin --profile web add github:EvannZhongg/dsh-lossless-anchors
 ```yaml
 - id: lossless-anchors
   config:
-    tokenBudget: 2000      # 软预算，DSH 启发式 token
+    tokenBudget: 2000      # 软预算，校准后的 token
     hardMaxTokens: 3000    # 绝对上限；默认 ceil(tokenBudget * 1.5)
+    charsPerToken: 4       # 非 CJK 文本的校准字符/token
+    cjkCharsPerToken: 1.6  # CJK 文本的校准字符/token
     maxTurns: 32           # 最多考虑多少个最近的被遮蔽 Turn
     maxAnchors: 256        # projection 状态保留上限
     includeSources:
@@ -59,8 +61,10 @@ dsh plugin --profile web add github:EvannZhongg/dsh-lossless-anchors
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
-| `tokenBudget` | `2000` | 渲染块的软预算。最新被遮蔽 Turn 超出时，可保留到 `hardMaxTokens`。 |
+| `tokenBudget` | `2000` | 渲染块的软预算，单位为校准后的 token。最新被遮蔽 Turn 超出时，可保留到 `hardMaxTokens`。 |
 | `hardMaxTokens` | `ceil(tokenBudget * 1.5)` | 绝对上限，必须 `>= tokenBudget`。 |
+| `charsPerToken` | `4` | 非 CJK 文本的校准字符/token。DSH 固定按 4 估算；如果代码/JSON 被 provider 切得更细，可以调低。 |
+| `cjkCharsPerToken` | `1.6` | CJK 文本的校准字符/token（约 0.6 token/汉字，参考 DeepSeek 公布的换算）。设为 `4` 可恢复旧的“全部按 4 字符/token”行为。 |
 | `maxTurns` | `32` | 最多考虑最近多少个被遮蔽 Turn；更老的 Turn 不在锚点窗口内。 |
 | `maxAnchors` | `256` | projection 状态上限。更老的锚点会被丢弃；通常它们已不在 `maxTurns` 内。 |
 | `includeSources` | `user`、`user-question-reply`、`user-approval` | 视为 user-authored 的 source kind。`goal`、`plan-mode`、`agent-instructions`、`runtime-context`、`compact-checkpoint` 不包含。 |
@@ -82,6 +86,8 @@ dsh plugin --profile web add github:EvannZhongg/dsh-lossless-anchors
 - 图片替换为 `[image omitted: <mediaType>, <w>x<h>]`；文件保留文件名和字节数；不会重复上传历史图片。
 
 ## 预算与截断
+
+预算按非 CJK 文本的 `charsPerToken` 和 CJK 文本的 `cjkCharsPerToken` 计价，并加上 DSH 对一条 user 消息的 block/role framing。默认是 `4` 和 `1.6`；CJK 速率让中文锚点块接近名义 token 预算，而不是让 DSH 统一的“4 字符/token”把 `2000` token 变成约 8000 字符。这两个速率是估算，不是 provider 的精确 tokenizer。
 
 1. 先考虑最新的被遮蔽 Turn。
 2. 候选块不超过 `tokenBudget` 就接受。
@@ -121,13 +127,13 @@ This block supersedes earlier [Lossless User Anchors] blocks.
 
 锚点时间戳沿用 DSH 持久 time-context 读数的格式，因此锚点与当前轮的时钟行可以直接比较，不需要在两套时钟约定之间换算。消息记录了自己的浏览器时区就按该时区渲染，否则使用配置的 `timeZone`。因为每条锚点都带自己的时间，“later 覆盖 earlier”是对时间戳的可核对陈述，而不是对列表位置的假定。
 
-另有一段 system-prompt 说明，只在锚点块存在时贡献；在第一条被遮蔽的用户消息出现之前，插件不会添加任何 system-prompt policy 文本。用户原话只出现在 user role，不进入 system prompt。
+另有一段 system-prompt 说明，从 session 第一条请求起就无条件注册，而不是等到第一个锚点出现才切换。中途改变 system prompt 会带来缓存代价：不支持 in-history 的路由会重写 surface 节点 0（从第一个 token 起失去 prefix cache），支持 in-history 的路由则会追加一份完整渲染后的 prompt。固定 policy 每次约多一百 token，却能保持 system prompt 稳定。用户原话只出现在 user role，不进入 system prompt。
 
 ## 限制
 
 - **只覆盖用户侧内容**：assistant 推理、tool 结果、摘要本身不做锚点。
 - **预算内无损**：只有被选中的锚点逐字保留；超大 Turn 可能被显式截断。
-- **启发式 token 估算**：DSH 按 4 字符/token 估算，中文和 JSON 会被低估；中文场景建议降低 `tokenBudget`。
+- **校准而非精确的 token 估算**：默认非 CJK 文本按 4 字符/token、CJK 文本按 1.6 字符/token。这比 DSH 统一的启发式更接近 provider 价格，但仍是估算：混合代码/JSON、特殊文字和 provider 专用 tokenizer 都可能有偏差。如果实测用量不一致，可调整 `charsPerToken` / `cjkCharsPerToken`。
 - **快照可能累积**：DSH 的 runtime-context 快照是 append-only 的；多次压缩可能同时留下多个锚点快照，块头声明“最新块覆盖旧块”，预算会限制总大小。
 - **摘要可能看不到锚点**：`compaction-basic` 只重放被遮蔽区间；如果当前锚点快照在保留尾部，摘要模型看不到它。锚点块会在压缩后重新注入，并在精确措辞上优先。
 - **`required: true` 会覆盖 suppression**：如果希望 `includeRuntimeContext: false` 同时关闭锚点，设 `required: false`。
@@ -149,7 +155,9 @@ npm run build       # tsc -> lib/index.js + lib/types
 - surface 成员过滤（不重复锚定）；
 - 原文保留，包括字面量 `{{...}}`；
 - 软预算选择与硬上限截断；
+- CJK 校准计价与统一 4 字符/token 的对比；
 - 整 Turn 丢弃与显式披露；
+- 第一条锚点出现前后 system prompt 保持完全一致；
 - `required` / suppression；
 - source 过滤；
 - 锚点时间戳的浏览器时区捕获与显示时区回退；

@@ -10,8 +10,11 @@
  */
 
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
-import { estimateContent, ROLE_OVERHEAD } from '@deepseek-ai/dsh-token-meter/estimate'
-import type { ResolvedConfig } from './config.js'
+import {
+  DEFAULT_CHARS_PER_TOKEN,
+  DEFAULT_CJK_CHARS_PER_TOKEN,
+  type ResolvedConfig,
+} from './config.js'
 import { formatAnchorTimestamp, systemTimeZone } from './time.js'
 import type { Anchor, AnchorState } from './types.js'
 
@@ -88,14 +91,54 @@ export function messageText(message: UserMessage): string {
 }
 
 /**
- * Price rendered text with the same fixed heuristic DSH uses for a user
- * message: one text block plus role framing.
+ * Structural price of one text block plus its user-role framing. DSH's meter
+ * prices a text block as `ceil(chars / 4) + 4` and a message as content + 4;
+ * the calibrated estimate keeps the same framing while varying the character
+ * rate.
+ */
+const FRAMING_OVERHEAD = 8
+
+/**
+ * Whether a Unicode code point is normally tokenized as CJK text. The ranges
+ * cover CJK radicals and punctuation, kana, Hangul, unified/compatibility
+ * ideographs, fullwidth forms, and the supplementary ideographic planes.
+ *
+ * @param codePoint - Unicode scalar value.
+ * @returns true for a CJK-family code point.
+ */
+export function isCjkCodePoint(codePoint: number): boolean {
+  return (codePoint >= 0x2E80 && codePoint <= 0x9FFF)
+    || (codePoint >= 0xAC00 && codePoint <= 0xD7AF)
+    || (codePoint >= 0xF900 && codePoint <= 0xFAFF)
+    || (codePoint >= 0xFE30 && codePoint <= 0xFE4F)
+    || (codePoint >= 0xFF00 && codePoint <= 0xFFEF)
+    || (codePoint >= 0x20000 && codePoint <= 0x2FA1F)
+}
+
+/**
+ * Price rendered text with a calibrated characters-per-token rate: non-CJK
+ * text uses {@link charsPerToken}, CJK text uses {@link cjkCharsPerToken}.
+ * This is deliberately not DSH's fixed four-characters-per-token meter: the
+ * point is to keep a CJK anchor block within the provider's real token cost,
+ * where four characters per token would underprice it by roughly 2.5x.
  *
  * @param text - rendered anchor block.
- * @returns heuristic token count.
+ * @param charsPerToken - calibrated rate for non-CJK text.
+ * @param cjkCharsPerToken - calibrated rate for CJK text.
+ * @returns calibrated token count, including block and role framing.
  */
-export function estimateTextTokens(text: string): number {
-  return estimateContent([{ type: 'text', text }]) + ROLE_OVERHEAD
+export function estimateTextTokens(
+  text: string,
+  charsPerToken: number = DEFAULT_CHARS_PER_TOKEN,
+  cjkCharsPerToken: number = DEFAULT_CJK_CHARS_PER_TOKEN,
+): number {
+  let other = 0
+  let cjk = 0
+  for (const character of text) {
+    if (isCjkCodePoint(character.codePointAt(0) ?? 0)) cjk += 1
+    else other += 1
+  }
+  return Math.ceil(other / charsPerToken + cjk / cjkCharsPerToken) + FRAMING_OVERHEAD
 }
 
 /**
@@ -165,21 +208,39 @@ export function selectAnchors(
     const group = groups[index]
     if (group === undefined) continue
     const candidate = [...group, ...chosen.flat()]
-    if (estimateTextTokens(formatAnchors(candidate, EMPTY_META, config.timeZone)) <= config.tokenBudget) {
+    if (estimateTextTokens(
+      formatAnchors(candidate, EMPTY_META, config.timeZone),
+      config.charsPerToken,
+      config.cjkCharsPerToken,
+    ) <= config.tokenBudget) {
       chosen.unshift(group)
       continue
     }
     // The group does not fit whole. Keep the newest turn up to the hard cap;
     // for an older turn, fit it into what remains of the soft budget. Either
     // path drops the oldest anchors first and truncates only the final text.
-    const chosenTokens = estimateTextTokens(formatAnchors(chosen.flat(), EMPTY_META, config.timeZone))
+    const chosenTokens = estimateTextTokens(
+      formatAnchors(chosen.flat(), EMPTY_META, config.timeZone),
+      config.charsPerToken,
+      config.cjkCharsPerToken,
+    )
     const remaining = chosen.length === 0
       ? config.hardMaxTokens
       // formatAnchors() prices one header; subtract the selected block and add
       // the shared header back so the fitted group is not double-charged.
       // The small safety margin absorbs disclosure-line framing differences.
-      : config.tokenBudget - chosenTokens + estimateTextTokens(ANCHOR_HEADER) - 16
-    const fitted = fitTurn(group, remaining, config.timeZone)
+      : config.tokenBudget - chosenTokens + estimateTextTokens(
+        ANCHOR_HEADER,
+        config.charsPerToken,
+        config.cjkCharsPerToken,
+      ) - 16
+    const fitted = fitTurn(
+      group,
+      remaining,
+      config.timeZone,
+      config.charsPerToken,
+      config.cjkCharsPerToken,
+    )
     if (fitted.anchors.length > 0) {
       chosen.unshift(fitted.anchors)
       meta = mergeMeta(meta, fitted.meta)
@@ -189,15 +250,21 @@ export function selectAnchors(
 
   let anchors = chosen.flat()
   let text = formatAnchors(anchors, meta, config.timeZone)
-  let estimatedTokens = estimateTextTokens(text)
+  let estimatedTokens = estimateTextTokens(text, config.charsPerToken, config.cjkCharsPerToken)
   if (estimatedTokens > config.hardMaxTokens) {
     // Defensive: header growth or a multi-group flatten can exceed the cap even
     // though each accepted group was priced. Re-fit as one bundle.
-    const fitted = fitTurn(anchors, config.hardMaxTokens, config.timeZone)
+    const fitted = fitTurn(
+      anchors,
+      config.hardMaxTokens,
+      config.timeZone,
+      config.charsPerToken,
+      config.cjkCharsPerToken,
+    )
     anchors = fitted.anchors
     meta = fitted.meta
     text = formatAnchors(anchors, meta, config.timeZone)
-    estimatedTokens = estimateTextTokens(text)
+    estimatedTokens = estimateTextTokens(text, config.charsPerToken, config.cjkCharsPerToken)
   }
   return { text, anchors, estimatedTokens, meta }
 }
@@ -220,6 +287,8 @@ function fitTurn(
   group: readonly Anchor[],
   maxTokens: number,
   timeZone: string,
+  charsPerToken: number,
+  cjkCharsPerToken: number,
 ): { anchors: Anchor[]; meta: RenderMeta } {
   const kept = [...group]
   let elidedAnchors = 0
@@ -229,7 +298,11 @@ function fitTurn(
       elidedAnchors,
       truncatedAnchors: 0,
     }
-    if (estimateTextTokens(formatAnchors(kept, candidateMeta, timeZone)) <= maxTokens) break
+    if (estimateTextTokens(
+      formatAnchors(kept, candidateMeta, timeZone),
+      charsPerToken,
+      cjkCharsPerToken,
+    ) <= maxTokens) break
     kept.shift()
     elidedAnchors += 1
   }
@@ -238,7 +311,11 @@ function fitTurn(
     elidedAnchors,
     truncatedAnchors: 0,
   }
-  if (estimateTextTokens(formatAnchors(kept, keptMeta, timeZone)) <= maxTokens) {
+  if (estimateTextTokens(
+    formatAnchors(kept, keptMeta, timeZone),
+    charsPerToken,
+    cjkCharsPerToken,
+  ) <= maxTokens) {
     return { anchors: kept, meta: keptMeta }
   }
 
@@ -246,7 +323,15 @@ function fitTurn(
   if (newest === undefined) {
     return { anchors: [], meta: { truncated: true, elidedAnchors, truncatedAnchors: 0 } }
   }
-  const truncatedText = truncateToFit(newest.text, newest, maxTokens, elidedAnchors, timeZone)
+  const truncatedText = truncateToFit(
+    newest.text,
+    newest,
+    maxTokens,
+    elidedAnchors,
+    timeZone,
+    charsPerToken,
+    cjkCharsPerToken,
+  )
   if (truncatedText === undefined) {
     return { anchors: [], meta: { truncated: true, elidedAnchors, truncatedAnchors: 0 } }
   }
@@ -272,11 +357,17 @@ function truncateToFit(
   maxTokens: number,
   elidedAnchors: number,
   timeZone: string,
+  charsPerToken: number,
+  cjkCharsPerToken: number,
 ): string | undefined {
   const meta: RenderMeta = { truncated: true, elidedAnchors, truncatedAnchors: 1 }
   const fits = (length: number): boolean => {
     const candidate: Anchor = { ...anchor, text: safeSlice(text, length) + ANCHOR_TRUNCATION_MARKER }
-    return estimateTextTokens(formatAnchors([candidate], meta, timeZone)) <= maxTokens
+    return estimateTextTokens(
+      formatAnchors([candidate], meta, timeZone),
+      charsPerToken,
+      cjkCharsPerToken,
+    ) <= maxTokens
   }
   if (!fits(0)) return undefined
   let low = 0

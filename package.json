@@ -1,6 +1,6 @@
 {
   "name": "dsh-lossless-anchors",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "Budgeted verbatim user anchors that survive DeepSeek Harness compaction",
   "keywords": [
     "deepseek-harness",
@@ -52,8 +52,7 @@
     "@deepseek-ai/dsh-llm": "*",
     "@deepseek-ai/dsh-session": "*",
     "@deepseek-ai/dsh-session-projection": "*",
-    "@deepseek-ai/dsh-system-prompt": "*",
-    "@deepseek-ai/dsh-token-meter": "*"
+    "@deepseek-ai/dsh-system-prompt": "*"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.5",
