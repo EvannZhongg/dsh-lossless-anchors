@@ -116,7 +116,7 @@ Later anchors supersede earlier conflicting anchors on the same subject.
 <用户原文>
 ```
 
-另有一段稳定的 system-prompt 说明，告诉模型如何解释这个块。用户原话只出现在 user role，不进入 system prompt。
+另有一段 system-prompt 说明，只在锚点块存在时贡献；在第一条被遮蔽的用户消息出现之前，插件不会添加任何 system-prompt policy 文本。用户原话只出现在 user role，不进入 system prompt。
 
 ## 限制
 

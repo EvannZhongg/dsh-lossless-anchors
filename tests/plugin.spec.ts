@@ -11,7 +11,7 @@ import {
   unsupportedInbox,
 } from '@deepseek-ai/dsh-agent-loop-testkit'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import SystemPrompt, { renderContextSnapshot } from '@deepseek-ai/dsh-system-prompt'
+import SystemPrompt, { renderContextSnapshot, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import * as plugin from '../src/index.ts'
 import type { Config } from '../src/config.ts'
 
@@ -75,6 +75,11 @@ async function snapshot(ctx: Context, session: Session): Promise<string> {
   return renderContextSnapshot(assembly)
 }
 
+async function promptText(ctx: Context, session: Session): Promise<string> {
+  const assembly = await ctx.systemPrompt.assemble(assembleContextFor(fakeAgent(session)))
+  return renderPrompt(assembly)
+}
+
 describe('PromptContext integration', () => {
   it('shows no anchors while the user message is still on the surface', async () => {
     const ctx = await mountProvider()
@@ -82,6 +87,20 @@ describe('PromptContext integration', () => {
       const session = Session.create(SessionId('visible'))
       appendUser(session, 'visible instruction')
       expect(await snapshot(ctx, session)).toBe('')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('adds the policy section only when an anchor block exists', async () => {
+    const ctx = await mountProvider()
+    try {
+      const session = Session.create(SessionId('policy-on-demand'))
+      const seq = appendUser(session, 'policy anchor')
+      expect(await promptText(ctx, session)).not.toContain('When the runtime context contains a [Lossless User Anchors] block')
+
+      shadow(session, seq)
+      expect(await promptText(ctx, session)).toContain('When the runtime context contains a [Lossless User Anchors] block')
     } finally {
       await ctx.fiber.dispose()
     }

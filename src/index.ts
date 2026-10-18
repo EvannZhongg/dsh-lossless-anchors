@@ -46,11 +46,21 @@ export function apply(ctx: Context, config: Config): void {
   const resolved = resolveConfig(config)
   registerAnchorProjection(ctx, resolved)
 
+  // The policy exists only while an anchor block is actually present. Before
+  // the first compaction shadows a user message the plugin contributes no
+  // system-prompt text at all.
+  const anchorText = (assembly: AssembleContext): string => {
+    const session = assembly.agent?.session
+    if (session === undefined) return ''
+    const state = ctx.sessionProjections.stateOf(session, 'losslessAnchors') as AnchorState
+    return selectAnchors(state, session.surface.nodes, resolved).text
+  }
+
   ctx.systemPrompt.section({
     name: 'lossless-anchors:policy',
     order: 1000,
     interpolate: false,
-    text: POLICY,
+    text: (assembly: AssembleContext) => anchorText(assembly).length === 0 ? '' : POLICY,
   })
 
   ctx.systemPrompt.context({
@@ -60,12 +70,7 @@ export function apply(ctx: Context, config: Config): void {
     required: resolved.required,
     // User text may contain literal `{{...}}`; never interpolate it.
     interpolate: false,
-    text: (assembly: AssembleContext) => {
-      const session = assembly.agent?.session
-      if (session === undefined) return ''
-      const state = ctx.sessionProjections.stateOf(session, 'losslessAnchors') as AnchorState
-      return selectAnchors(state, session.surface.nodes, resolved).text
-    },
+    text: anchorText,
   })
 }
 

@@ -113,7 +113,7 @@ Later anchors supersede earlier conflicting anchors on the same subject.
 <exact user text>
 ```
 
-A stable system-prompt section explains how to interpret the block. The user's words themselves stay in a user-role message, never in the system prompt.
+A system-prompt section explains how to interpret the block, and is contributed only while the block is present. Before the first shadowed anchor, the plugin adds no system-prompt policy text. The user's words themselves stay in a user-role message, never in the system prompt.
 
 ## Limitations
 
