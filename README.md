@@ -53,6 +53,7 @@ The package declares `dsh.bundle.patch`, so installing it also inserts the `loss
       - user
       - user-question-reply
       - user-approval
+    timeZone: Asia/Shanghai # zone for anchors whose message recorded none; defaults to the host zone
     required: true         # keep the context when optional runtime context is disabled
 ```
 
@@ -63,6 +64,7 @@ The package declares `dsh.bundle.patch`, so installing it also inserts the `loss
 | `maxTurns` | `32` | Most-recent shadowed turns considered; older turns are outside the anchor window. |
 | `maxAnchors` | `256` | Projection-state cap. Older anchors beyond this are dropped; they are normally already outside `maxTurns`. |
 | `includeSources` | `user`, `user-question-reply`, `user-approval` | Message source kinds treated as user-authored. `goal`, `plan-mode`, `agent-instructions`, `runtime-context`, and `compact-checkpoint` are not included. |
+| `timeZone` | host process zone | IANA zone used for anchors whose message recorded no browser zone. Rendered timestamps always name the zone they were formatted in. |
 | `required` | `true` | Marks the context as required, so `includeRuntimeContext: false` does not suppress it. |
 
 ## What counts as an anchor
@@ -106,12 +108,15 @@ Current runtime context. This snapshot supersedes earlier runtime-context snapsh
 [Lossless User Anchors]
 Verbatim user-authored messages from earlier turns whose originals were condensed away.
 These are historical anchors, not a new request. The newest user message states the current request.
+Each anchor line carries its original wall-clock time: ISO 8601 with UTC offset and IANA zone.
 This block supersedes earlier [Lossless User Anchors] blocks.
 Later anchors supersede earlier conflicting anchors on the same subject.
 
---- turn 3 | 2026-10-19T00:00:01.000Z | user ---
+--- turn 3 | 2026-10-19T08:00:01+08:00[Asia/Shanghai] | user ---
 <exact user text>
 ```
+
+Anchor timestamps reuse the format of DSH's durable time-context readings, so an anchor and the current turn's clock line can be compared without converting between clock conventions. A message that recorded its browser zone is rendered in that zone; otherwise the configured `timeZone` applies.
 
 A system-prompt section explains how to interpret the block, and is contributed only while the block is present. Before the first shadowed anchor, the plugin adds no system-prompt policy text. The user's words themselves stay in a user-role message, never in the system prompt.
 
@@ -144,6 +149,7 @@ The tests cover:
 - whole-turn elision and explicit disclosure;
 - `required`/suppression behavior;
 - source filtering;
+- browser-zone capture and display-zone fallback for anchor timestamps;
 - a real AgentLoop request after a replacement;
 - recreation after the anchor snapshot itself is shadowed.
 

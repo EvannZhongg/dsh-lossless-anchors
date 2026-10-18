@@ -4,6 +4,7 @@ import {
   DEFAULT_TOKEN_BUDGET,
   resolveConfig,
 } from '../src/config.ts'
+import { systemTimeZone } from '../src/time.ts'
 
 describe('configuration', () => {
   it('applies the 2000-token default and a 1.5x hard cap', () => {
@@ -13,6 +14,7 @@ describe('configuration', () => {
     expect(resolved.maxTurns).toBe(32)
     expect(resolved.maxAnchors).toBe(256)
     expect([...resolved.includeSources]).toEqual([...DEFAULT_INCLUDE_SOURCES])
+    expect(resolved.timeZone).toBe(systemTimeZone())
     expect(resolved.required).toBe(true)
   })
 
@@ -31,5 +33,11 @@ describe('configuration', () => {
     expect(() => resolveConfig({ tokenBudget: 200.5 })).toThrow(/tokenBudget/)
     expect(() => resolveConfig({ maxTurns: 0 })).toThrow(/maxTurns/)
     expect(() => resolveConfig({ maxAnchors: 0 })).toThrow(/maxAnchors/)
+  })
+
+  it('accepts an explicit display zone and rejects an unknown one', () => {
+    expect(resolveConfig({ timeZone: 'UTC' }).timeZone).toBe('UTC')
+    expect(resolveConfig({ timeZone: 'America/New_York' }).timeZone).toBe('America/New_York')
+    expect(() => resolveConfig({ timeZone: 'Not/AZone' })).toThrow(/timeZone/)
   })
 })

@@ -1,6 +1,6 @@
 {
   "name": "dsh-lossless-anchors",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Budgeted verbatim user anchors that survive DeepSeek Harness compaction",
   "keywords": [
     "deepseek-harness",

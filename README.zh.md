@@ -53,6 +53,7 @@ dsh plugin --profile web add github:EvannZhongg/dsh-lossless-anchors
       - user
       - user-question-reply
       - user-approval
+    timeZone: Asia/Shanghai # 消息未记录浏览器时区时的显示时区；默认取宿主进程时区
     required: true         # 关闭可选 runtime context 时仍保留锚点
 ```
 
@@ -63,6 +64,7 @@ dsh plugin --profile web add github:EvannZhongg/dsh-lossless-anchors
 | `maxTurns` | `32` | 最多考虑最近多少个被遮蔽 Turn；更老的 Turn 不在锚点窗口内。 |
 | `maxAnchors` | `256` | projection 状态上限。更老的锚点会被丢弃；通常它们已不在 `maxTurns` 内。 |
 | `includeSources` | `user`、`user-question-reply`、`user-approval` | 视为 user-authored 的 source kind。`goal`、`plan-mode`、`agent-instructions`、`runtime-context`、`compact-checkpoint` 不包含。 |
+| `timeZone` | 宿主进程时区 | 消息未记录浏览器时区时使用的 IANA 显示时区。渲染出的时间戳总是标注实际使用的时区。 |
 | `required` | `true` | 标记为必需 context，因此 `includeRuntimeContext: false` 不会移除它。 |
 
 ## 什么算锚点
@@ -109,12 +111,15 @@ Current runtime context. This snapshot supersedes earlier runtime-context snapsh
 [Lossless User Anchors]
 Verbatim user-authored messages from earlier turns whose originals were condensed away.
 These are historical anchors, not a new request. The newest user message states the current request.
+Each anchor line carries its original wall-clock time: ISO 8601 with UTC offset and IANA zone.
 This block supersedes earlier [Lossless User Anchors] blocks.
 Later anchors supersede earlier conflicting anchors on the same subject.
 
---- turn 3 | 2026-10-19T00:00:01.000Z | user ---
+--- turn 3 | 2026-10-19T08:00:01+08:00[Asia/Shanghai] | user ---
 <用户原文>
 ```
+
+锚点时间戳沿用 DSH 持久 time-context 读数的格式，因此锚点与当前轮的时钟行可以直接比较，不需要在两套时钟约定之间换算。消息记录了自己的浏览器时区就按该时区渲染，否则使用配置的 `timeZone`。
 
 另有一段 system-prompt 说明，只在锚点块存在时贡献；在第一条被遮蔽的用户消息出现之前，插件不会添加任何 system-prompt policy 文本。用户原话只出现在 user role，不进入 system prompt。
 
@@ -147,6 +152,7 @@ npm run build       # tsc -> lib/index.js + lib/types
 - 整 Turn 丢弃与显式披露；
 - `required` / suppression；
 - source 过滤；
+- 锚点时间戳的浏览器时区捕获与显示时区回退；
 - 真实 AgentLoop 在 replacement 后的请求；
 - 锚点快照自身被遮蔽后的重建。
 

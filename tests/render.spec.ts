@@ -10,6 +10,7 @@ import {
 import type { Anchor, AnchorState } from '../src/types.ts'
 
 const TIME = Date.parse('2026-10-19T00:00:00.000Z')
+const ZONE = 'Asia/Shanghai'
 
 function anchor(seq: number, turn: number, text: string, source = 'user'): Anchor {
   return { seq, turn, time: TIME + seq, source, text }
@@ -146,11 +147,36 @@ describe('anchor formatting', () => {
     const rendered = formatAnchors(
       [anchor(1, 3, 'body', 'user-question-reply')],
       { truncated: true, elidedAnchors: 2, truncatedAnchors: 1 },
+      ZONE,
     )
 
-    expect(rendered).toContain('--- turn 3 | 2026-10-19T00:00:00.001Z | user-question-reply ---')
+    expect(rendered).toContain('--- turn 3 | 2026-10-19T08:00:00+08:00[Asia/Shanghai] | user-question-reply ---')
     expect(rendered).toContain('2 older anchor message(s) elided')
     expect(rendered).toContain('1 anchor text(s) truncated')
+  })
+
+  it('drops sub-second precision from the rendered timestamp', () => {
+    const rendered = formatAnchors([anchor(1, 1, 'body')], undefined, ZONE)
+    expect(rendered).not.toContain('.000')
+    expect(rendered).not.toContain('.001')
+  })
+
+  it('prefers the zone recorded on the message over the fallback', () => {
+    const rendered = formatAnchors(
+      [{ ...anchor(1, 1, 'body'), zone: 'America/New_York' }],
+      undefined,
+      ZONE,
+    )
+    expect(rendered).toContain('2026-10-18T20:00:00-04:00[America/New_York]')
+  })
+
+  it('falls back to the process zone for an unusable recorded zone', () => {
+    const rendered = formatAnchors(
+      [{ ...anchor(1, 1, 'body'), zone: 'Not/AZone' }],
+      undefined,
+      ZONE,
+    )
+    expect(rendered).toContain('2026-10-19T08:00:00+08:00[')
   })
 
   it('prices rendered text with the same heuristic as a user message', () => {

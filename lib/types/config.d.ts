@@ -42,6 +42,12 @@ export interface Config {
      */
     includeSources?: string[];
     /**
+     * IANA zone used for anchors whose message recorded no browser zone.
+     * Defaults to the host process zone. Rendered timestamps always name the
+     * zone they were formatted in.
+     */
+    timeZone?: string;
+    /**
      * Keep the anchor context when optional runtime context is disabled.
      * Defaults to true.
      */
@@ -56,6 +62,7 @@ export interface ResolvedConfig {
     readonly maxTurns: number;
     readonly maxAnchors: number;
     readonly includeSources: ReadonlySet<string>;
+    readonly timeZone: string;
     readonly required: boolean;
 }
 /** Validate and resolve defaults; invalid values fail plugin load. */

@@ -12,6 +12,7 @@
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { estimateContent, ROLE_OVERHEAD } from '@deepseek-ai/dsh-token-meter/estimate'
 import type { ResolvedConfig } from './config.js'
+import { formatAnchorTimestamp, systemTimeZone } from './time.js'
 import type { Anchor, AnchorState } from './types.js'
 
 /** Stable block preamble. Deliberately says "historical", not "new request". */
@@ -19,6 +20,7 @@ export const ANCHOR_HEADER = [
   '[Lossless User Anchors]',
   'Verbatim user-authored messages from earlier turns whose originals were condensed away.',
   'These are historical anchors, not a new request. The newest user message states the current request.',
+  'Each anchor line carries its original wall-clock time: ISO 8601 with UTC offset and IANA zone.',
   'This block supersedes earlier [Lossless User Anchors] blocks.',
   'Later anchors supersede earlier conflicting anchors on the same subject.',
 ].join('\n')
@@ -102,9 +104,14 @@ export function estimateTextTokens(text: string): number {
  *
  * @param anchors - anchors in chronological order.
  * @param meta - truncation accounting to disclose.
+ * @param fallbackTimeZone - zone used for an anchor that recorded none.
  * @returns rendered block, or `''` when there are no anchors.
  */
-export function formatAnchors(anchors: readonly Anchor[], meta: RenderMeta = EMPTY_META): string {
+export function formatAnchors(
+  anchors: readonly Anchor[],
+  meta: RenderMeta = EMPTY_META,
+  fallbackTimeZone: string = systemTimeZone(),
+): string {
   if (anchors.length === 0) return ''
   const lines = [ANCHOR_HEADER]
   if (meta.truncated) {
@@ -114,9 +121,10 @@ export function formatAnchors(anchors: readonly Anchor[], meta: RenderMeta = EMP
     )
   }
   for (const anchor of anchors) {
+    const time = formatAnchorTimestamp(anchor.time, anchor.zone ?? fallbackTimeZone, fallbackTimeZone)
     lines.push(
       '',
-      `--- turn ${anchor.turn} | ${new Date(anchor.time).toISOString()} | ${anchor.source} ---`,
+      `--- turn ${anchor.turn} | ${time} | ${anchor.source} ---`,
       anchor.text,
     )
   }
@@ -157,21 +165,21 @@ export function selectAnchors(
     const group = groups[index]
     if (group === undefined) continue
     const candidate = [...group, ...chosen.flat()]
-    if (estimateTextTokens(formatAnchors(candidate)) <= config.tokenBudget) {
+    if (estimateTextTokens(formatAnchors(candidate, EMPTY_META, config.timeZone)) <= config.tokenBudget) {
       chosen.unshift(group)
       continue
     }
     // The group does not fit whole. Keep the newest turn up to the hard cap;
     // for an older turn, fit it into what remains of the soft budget. Either
     // path drops the oldest anchors first and truncates only the final text.
-    const chosenTokens = estimateTextTokens(formatAnchors(chosen.flat()))
+    const chosenTokens = estimateTextTokens(formatAnchors(chosen.flat(), EMPTY_META, config.timeZone))
     const remaining = chosen.length === 0
       ? config.hardMaxTokens
       // formatAnchors() prices one header; subtract the selected block and add
       // the shared header back so the fitted group is not double-charged.
       // The small safety margin absorbs disclosure-line framing differences.
       : config.tokenBudget - chosenTokens + estimateTextTokens(ANCHOR_HEADER) - 16
-    const fitted = fitTurn(group, remaining)
+    const fitted = fitTurn(group, remaining, config.timeZone)
     if (fitted.anchors.length > 0) {
       chosen.unshift(fitted.anchors)
       meta = mergeMeta(meta, fitted.meta)
@@ -180,15 +188,15 @@ export function selectAnchors(
   }
 
   let anchors = chosen.flat()
-  let text = formatAnchors(anchors, meta)
+  let text = formatAnchors(anchors, meta, config.timeZone)
   let estimatedTokens = estimateTextTokens(text)
   if (estimatedTokens > config.hardMaxTokens) {
     // Defensive: header growth or a multi-group flatten can exceed the cap even
     // though each accepted group was priced. Re-fit as one bundle.
-    const fitted = fitTurn(anchors, config.hardMaxTokens)
+    const fitted = fitTurn(anchors, config.hardMaxTokens, config.timeZone)
     anchors = fitted.anchors
     meta = fitted.meta
-    text = formatAnchors(anchors, meta)
+    text = formatAnchors(anchors, meta, config.timeZone)
     estimatedTokens = estimateTextTokens(text)
   }
   return { text, anchors, estimatedTokens, meta }
@@ -211,6 +219,7 @@ function groupByTurn(anchors: readonly Anchor[]): Anchor[][] {
 function fitTurn(
   group: readonly Anchor[],
   maxTokens: number,
+  timeZone: string,
 ): { anchors: Anchor[]; meta: RenderMeta } {
   const kept = [...group]
   let elidedAnchors = 0
@@ -220,7 +229,7 @@ function fitTurn(
       elidedAnchors,
       truncatedAnchors: 0,
     }
-    if (estimateTextTokens(formatAnchors(kept, candidateMeta)) <= maxTokens) break
+    if (estimateTextTokens(formatAnchors(kept, candidateMeta, timeZone)) <= maxTokens) break
     kept.shift()
     elidedAnchors += 1
   }
@@ -229,7 +238,7 @@ function fitTurn(
     elidedAnchors,
     truncatedAnchors: 0,
   }
-  if (estimateTextTokens(formatAnchors(kept, keptMeta)) <= maxTokens) {
+  if (estimateTextTokens(formatAnchors(kept, keptMeta, timeZone)) <= maxTokens) {
     return { anchors: kept, meta: keptMeta }
   }
 
@@ -237,7 +246,7 @@ function fitTurn(
   if (newest === undefined) {
     return { anchors: [], meta: { truncated: true, elidedAnchors, truncatedAnchors: 0 } }
   }
-  const truncatedText = truncateToFit(newest.text, newest, maxTokens, elidedAnchors)
+  const truncatedText = truncateToFit(newest.text, newest, maxTokens, elidedAnchors, timeZone)
   if (truncatedText === undefined) {
     return { anchors: [], meta: { truncated: true, elidedAnchors, truncatedAnchors: 0 } }
   }
@@ -262,11 +271,12 @@ function truncateToFit(
   anchor: Anchor,
   maxTokens: number,
   elidedAnchors: number,
+  timeZone: string,
 ): string | undefined {
   const meta: RenderMeta = { truncated: true, elidedAnchors, truncatedAnchors: 1 }
   const fits = (length: number): boolean => {
     const candidate: Anchor = { ...anchor, text: safeSlice(text, length) + ANCHOR_TRUNCATION_MARKER }
-    return estimateTextTokens(formatAnchors([candidate], meta)) <= maxTokens
+    return estimateTextTokens(formatAnchors([candidate], meta, timeZone)) <= maxTokens
   }
   if (!fits(0)) return undefined
   let low = 0

@@ -15,6 +15,11 @@ export interface Anchor {
     turn: number;
     /** Unix epoch milliseconds of the original event. */
     time: number;
+    /**
+     * Browser IANA zone the message was submitted from, when its source recorded
+     * one. Rendering falls back to the configured `timeZone` when absent.
+     */
+    zone?: string | undefined;
     /** Message source kind (`user`, `user-question-reply`, `user-approval`, ...). */
     source: string;
     /** Verbatim model-visible text, with media replaced by explicit placeholders. */

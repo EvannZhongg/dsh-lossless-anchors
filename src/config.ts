@@ -5,6 +5,7 @@
  */
 
 import z from '@deepseek-ai/schemastery'
+import { isValidTimeZone, systemTimeZone } from './time.js'
 
 /** Default soft budget for the rendered anchor block, in DSH heuristic tokens. */
 export const DEFAULT_TOKEN_BUDGET = 2000
@@ -54,6 +55,12 @@ export interface Config {
    */
   includeSources?: string[]
   /**
+   * IANA zone used for anchors whose message recorded no browser zone.
+   * Defaults to the host process zone. Rendered timestamps always name the
+   * zone they were formatted in.
+   */
+  timeZone?: string
+  /**
    * Keep the anchor context when optional runtime context is disabled.
    * Defaults to true.
    */
@@ -67,6 +74,7 @@ export const Config: z<Config> = z.object({
   maxTurns: z.number().step(1).min(1).default(DEFAULT_MAX_TURNS),
   maxAnchors: z.number().step(1).min(1).default(DEFAULT_MAX_ANCHORS),
   includeSources: z.array(z.string()).default([...DEFAULT_INCLUDE_SOURCES]),
+  timeZone: z.string(),
   required: z.boolean().default(true),
 })
 
@@ -77,6 +85,7 @@ export interface ResolvedConfig {
   readonly maxTurns: number
   readonly maxAnchors: number
   readonly includeSources: ReadonlySet<string>
+  readonly timeZone: string
   readonly required: boolean
 }
 
@@ -96,12 +105,14 @@ export function resolveConfig(input: Config): ResolvedConfig {
   requireSafeInteger('maxTurns', maxTurns, 1)
   requireSafeInteger('maxAnchors', maxAnchors, 1)
   const includeSources = new Set(input.includeSources ?? DEFAULT_INCLUDE_SOURCES)
+  const timeZone = resolveTimeZone(input.timeZone)
   return {
     tokenBudget,
     hardMaxTokens,
     maxTurns,
     maxAnchors,
     includeSources,
+    timeZone,
     required: input.required ?? true,
   }
 }
@@ -111,4 +122,13 @@ function requireSafeInteger(name: string, value: number, min: number): void {
   if (!Number.isSafeInteger(value) || value < min) {
     throw new TypeError(`lossless-anchors: ${name} must be a safe integer >= ${min}, got ${String(value)}`)
   }
+}
+
+/** Resolve the display zone, rejecting a label the runtime cannot format. */
+function resolveTimeZone(value: string | undefined): string {
+  const zone = value ?? systemTimeZone()
+  if (!isValidTimeZone(zone)) {
+    throw new TypeError(`lossless-anchors: timeZone is not a valid IANA zone: ${JSON.stringify(zone)}`)
+  }
+  return zone
 }

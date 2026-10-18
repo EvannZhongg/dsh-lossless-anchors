@@ -57,9 +57,10 @@ export declare function estimateTextTokens(text: string): number;
  *
  * @param anchors - anchors in chronological order.
  * @param meta - truncation accounting to disclose.
+ * @param fallbackTimeZone - zone used for an anchor that recorded none.
  * @returns rendered block, or `''` when there are no anchors.
  */
-export declare function formatAnchors(anchors: readonly Anchor[], meta?: RenderMeta): string;
+export declare function formatAnchors(anchors: readonly Anchor[], meta?: RenderMeta, fallbackTimeZone?: string): string;
 /**
  * Select the shadowed anchor window for one request.
  *

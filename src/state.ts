@@ -16,6 +16,7 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-projection/types'
 import type { ResolvedConfig } from './config.js'
 import { messageText } from './render.js'
+import { isValidTimeZone } from './time.js'
 import type { Anchor, AnchorState } from './types.js'
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
@@ -29,6 +30,7 @@ const anchorSchema = zod.object({
   seq: zod.number().int().nonnegative(),
   turn: zod.number().int().nonnegative(),
   time: zod.number(),
+  zone: zod.string().optional(),
   source: zod.string(),
   text: zod.string(),
 })
@@ -51,7 +53,7 @@ const stateSchema = zod.object({
 export function registerAnchorProjection(ctx: Context, config: ResolvedConfig): void {
   ctx.sessionProjections.register({
     key: 'losslessAnchors',
-    stateVersion: 1,
+    stateVersion: 2,
     stateSchema,
     init: () => ({ turn: 0, anchors: [] }),
     apply: (state, event) => {
@@ -63,10 +65,12 @@ export function registerAnchorProjection(ctx: Context, config: ResolvedConfig): 
       const text = messageText(event.data)
       if (text.trim().length === 0) return state
 
+      const zone = browserTimeZone(event.data.source)
       const anchor: Anchor = {
         seq: event.seq,
         turn: state.turn,
         time: event.time,
+        ...(zone === undefined ? {} : { zone }),
         source: event.data.source.kind,
         text,
       }
@@ -76,5 +80,20 @@ export function registerAnchorProjection(ctx: Context, config: ResolvedConfig): 
       return { ...state, anchors: [...kept, anchor] }
     },
   })
+}
+
+/**
+ * Read the browser zone a transported prompt recorded on its source.
+ *
+ * Web prompts carry `clientTimeZone` on their `user-rpc` source; older or
+ * non-browser producers carry none. A label the runtime cannot format is
+ * ignored at capture so rendering never has to discover it.
+ *
+ * @param source - the message source recorded on the durable event.
+ * @returns a usable IANA zone, or `undefined`.
+ */
+function browserTimeZone(source: { readonly kind: string }): string | undefined {
+  const value = (source as { readonly clientTimeZone?: unknown }).clientTimeZone
+  return typeof value === 'string' && isValidTimeZone(value) ? value : undefined
 }
 

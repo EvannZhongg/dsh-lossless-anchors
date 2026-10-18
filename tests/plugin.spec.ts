@@ -122,6 +122,39 @@ describe('PromptContext integration', () => {
     }
   })
 
+  it('renders the browser zone recorded on the message source', async () => {
+    const ctx = await mountProvider()
+    try {
+      const session = Session.create(SessionId('source-zone'))
+      session.append('turn/start', { turn: 1 })
+      const event = session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: 'zoned anchor' }],
+        source: { kind: 'user', rpcId: 'req-1', clientTimeZone: 'America/New_York' } as never,
+      }), { surfaceOp: 'append' })
+      shadow(session, event.seq)
+
+      const text = await snapshot(ctx, session)
+      expect(text).toContain('[America/New_York]')
+      expect(text).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[45]:00\[America\/New_York\]/)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('falls back to the configured zone when the source recorded none', async () => {
+    const ctx = await mountProvider({ timeZone: 'UTC' })
+    try {
+      const session = Session.create(SessionId('fallback-zone'))
+      const seq = appendUser(session, 'unzoned anchor')
+      shadow(session, seq)
+
+      const text = await snapshot(ctx, session)
+      expect(text).toContain('+00:00[UTC]')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('keeps anchors when optional runtime context is suppressed', async () => {
     const ctx = await mountProvider({ required: true }, { includeRuntimeContext: false })
     try {
